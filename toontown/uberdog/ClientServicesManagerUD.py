@@ -1156,6 +1156,8 @@ class ClientServicesManagerUD(DistributedObjectGlobalUD):
             self.accountDB = DeveloperAccountDB(self)
         elif accountDBType == 'local':
             self.accountDB = LocalAccountDB(self)
+        elif accountDBType == 'mongodb':
+            self.accountDB = MongoAccountDB(self)
         elif accountDBType == 'remote':
             self.accountDB = RemoteAccountDB(self)
         else:
