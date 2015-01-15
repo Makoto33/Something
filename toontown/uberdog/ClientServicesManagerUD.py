@@ -1,4 +1,4 @@
-import semidbm
+mport semidbm
 import base64
 from direct.directnotify.DirectNotifyGlobal import directNotify
 from direct.distributed.DistributedObjectGlobalUD import DistributedObjectGlobalUD
@@ -23,6 +23,10 @@ from toontown.toonbase import TTLocalizer
 accountDBType = simbase.config.GetString('accountdb-type', 'developer')
 if accountDBType == 'remote':
     from Crypto.Cipher import AES
+
+if accountDBType == 'mongodb':
+    import pymongo
+    from pymongo import MongoClient
 
 # Sometimes we'll want to force a specific access level, such as on the
 # developer server:
@@ -161,6 +165,7 @@ class LocalAccountDB(AccountDB):
                 'accountId': 0,
                 'accessLevel': max((700 if not self.dbm else 100), minAccessLevel)
             }
+
             callback(response)
             return response
 
@@ -174,6 +179,116 @@ class LocalAccountDB(AccountDB):
             }
             callback(response)
             return response
+
+class MongoAccountDB(AccountDB):
+    notify = directNotify.newCategory('MongoAccountDB')
+
+    def __init__(self, csm):
+        self.csm = csm
+
+        dburl = simbase.config.GetString('mongodb-url', 'mongodb://localhost:21021')
+        self.client = MongoClient(dburl)
+
+        dbname = simbase.config.GetString('mongodb-name', 'test')
+        self.db = self.client[dbname]
+
+        self.accounts = self.db.accountdb
+        self.nameStatus = self.db.nameStatus
+
+    def addNameRequest(self, avId, name):
+        self.nameStatus.insert( { "avId": avId, "name": name, "status": "PENDING" } )
+        return 'Success'
+
+    def getNameStatus(self, avId):
+        stat = self.nameStatus[avId]
+        if stat:
+            return stat["status"]
+        return 'REJECTED'
+
+    def removeNameRequest(self, avId):
+        self.nameStatus.remove( { "avId": avId } )
+        return 'Success'
+
+    def lookup(self, token, callback):
+        try:
+            tokenList = token.split(':')
+    
+            if len(tokenList) != 2:
+                response = {
+                  'success': False,
+                  'reason': "invalid password format"
+                }
+                callback(response)
+                return response
+
+            username = tokenList[0]
+            password = tokenList[1]
+
+            # special case for first user
+            if accounts.count() == 0:
+                account = { "username": username, "password": password, "accountId": 0, "accessLevel": 700}
+                accounts.insert(account)
+                response = {
+                  'success': True,
+                  'userId': username,
+                  'accountId': 0,
+                  'accessLevel': 700
+                }
+                callback(response)
+                return response
+
+            account = accounts.find_one({"username": username})
+
+            if account:
+                if account["password"] != password:
+                    response = {
+                      'success': False,
+                      'reason': "invalid password"
+                    }
+                    callback(response)
+                    return response
+
+                response = {
+                    'success': True,
+                    'userId': username,
+                    'accountId': int(account["accountId"]),
+                    'accessLevel': int(account["accessLevel"])
+                }
+                callback(response)
+                return response
+
+            account = { "username": username, "password": password, "accountId": 0, "accessLevel": max(100, minAccessLevel)}
+            accounts.insert(account)
+
+            response = {
+              'success': True,
+              'userId': username,
+              'accountId': 0,
+              'accessLevel': int(account["accessLevel"])
+            }
+
+            callback(response)
+            return response
+                
+        except:
+            self.notify.warning('Could not decode the provided token!')
+            response = {
+                'success': False,
+                'reason': "Can't decode this token."
+            }
+            callback(response)
+            return response
+
+    def storeAccountID(self, userId, accountId, callback):
+        accounts.update({"username": userId}, {"$set": {"accountId": accountId}})
+
+        self.dbm[str(userId)] = str(accountId)  # semidbm only allows strings.
+        if getattr(self.dbm, 'sync', None):
+            self.dbm.sync()
+            callback(True)
+        else:
+            self.notify.warning('Unable to associate user %s with account %d!' % (userId, accountId))
+            callback(False)
 
 
 class RemoteAccountDB(AccountDB):
