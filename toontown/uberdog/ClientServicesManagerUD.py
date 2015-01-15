@@ -1,4 +1,4 @@
-mport semidbm
+import semidbm
 import base64
 from direct.directnotify.DirectNotifyGlobal import directNotify
 from direct.distributed.DistributedObjectGlobalUD import DistributedObjectGlobalUD
