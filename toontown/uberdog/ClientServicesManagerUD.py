@@ -183,6 +183,30 @@ class LocalAccountDB(AccountDB):
 class MongoAccountDB(AccountDB):
     notify = directNotify.newCategory('MongoAccountDB')
 
+    def get_hashed_password(plain_text_password):
+        # Hash a password for the first time
+        #   (Using bcrypt, the salt is saved into the hash itself)
+        return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
+ 
+    def check_password(plain_text_password, hashed_password):
+        # Check hased password. Useing bcrypt, the salt is saved into the hash itself
+        return bcrypt.checkpw(plain_text_password, hashed_password)
+
+    #   pip install py-bcrypt
+    # >>> from datetime import datetime
+    # >>> past = datetime.now()
+    # >>> present = datetime.now()
+    # >>> past < present
+    # True
+    # >>> datetime(2012, 1, 1) < present
+    # False
+    # >>> present - datetime(2000, 4, 4)
+    # datetime.timedelta(4242, 75703, 762105)
+    #  
+    #  
+    # from datetime import timedelta
+    # print present + timedelta(1)
+
     def __init__(self, csm):
         self.csm = csm
 
