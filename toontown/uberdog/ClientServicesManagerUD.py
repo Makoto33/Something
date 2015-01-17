@@ -374,9 +374,10 @@ class MySQLAccountDB(AccountDB):
             'account-bridge-filename', 'account-bridge')
         dbm = semidbm.open(filename, 'c')
 
-        for account, accountid in dbm.iteritems():
+        for account in dbm.keys():
+            accountid = dbm[account]
             print "%s maps to %s"%(account, accountid)
-            self.cur.execute(self.add_account, (username,  "", accountid, 0))
+            self.cur.execute(self.add_account, (account,  "", accountid, 0))
         self.cnx.commit()
         dbm.close()
 
