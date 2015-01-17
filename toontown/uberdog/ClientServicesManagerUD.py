@@ -150,7 +150,6 @@ class DeveloperAccountDB(AccountDB):
 # give the user an access level of 600. Instead, the first user that is created
 # gets 700 access, and every user created afterwards gets 100 access:
 
-
 class LocalAccountDB(AccountDB):
     notify = directNotify.newCategory('LocalAccountDB')
 
@@ -179,33 +178,29 @@ class LocalAccountDB(AccountDB):
             }
             callback(response)
             return response
+# Mongo implementation of the AccountDB
+#
+# This was never used in production and might possibly not work.
+# Still, it is a good starting point.  This has a similar behavior to
+# DeveloperAccountDB and LocalAccountDB in that it automatically
+# registers new users, the first user that is created
+# gets 700 access, and every user created afterwards gets 100 access.
+#
+# params:
+#    mongodb-url   how to connect to the mongodb
+#    mongodb-name  What db to use
+#
+# dependencies:
+#    pip install py-bcrypt PyMongo
 
 class MongoAccountDB(AccountDB):
     notify = directNotify.newCategory('MongoAccountDB')
 
     def get_hashed_password(plain_text_password):
-        # Hash a password for the first time
-        #   (Using bcrypt, the salt is saved into the hash itself)
         return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
  
     def check_password(plain_text_password, hashed_password):
-        # Check hased password. Useing bcrypt, the salt is saved into the hash itself
         return bcrypt.checkpw(plain_text_password, hashed_password)
-
-    #   pip install py-bcrypt
-    # >>> from datetime import datetime
-    # >>> past = datetime.now()
-    # >>> present = datetime.now()
-    # >>> past < present
-    # True
-    # >>> datetime(2012, 1, 1) < present
-    # False
-    # >>> present - datetime(2000, 4, 4)
-    # datetime.timedelta(4242, 75703, 762105)
-    #  
-    #  
-    # from datetime import timedelta
-    # print present + timedelta(1)
 
     def __init__(self, csm):
         self.csm = csm
@@ -250,7 +245,7 @@ class MongoAccountDB(AccountDB):
 
             # special case for first user
             if accounts.count() == 0:
-                account = { "username": username, "password": password, "accountId": 0, "accessLevel": 700}
+                account = { "username": username, "password": get_hashed_password(password), "accountId": 0, "accessLevel": 700}
                 accounts.insert(account)
                 response = {
                   'success': True,
@@ -264,7 +259,7 @@ class MongoAccountDB(AccountDB):
             account = accounts.find_one({"username": username})
 
             if account:
-                if account["password"] != password:
+                if !check_password(password, account["password"]):
                     response = {
                       'success': False,
                       'reason': "invalid password"
@@ -281,7 +276,7 @@ class MongoAccountDB(AccountDB):
                 callback(response)
                 return response
 
-            account = { "username": username, "password": password, "accountId": 0, "accessLevel": max(100, minAccessLevel)}
+            account = { "username": username, "password": get_hashed_password(password), "accountId": 0, "accessLevel": max(100, minAccessLevel)}
             accounts.insert(account)
 
             response = {
@@ -304,16 +299,264 @@ class MongoAccountDB(AccountDB):
             return response
 
     def storeAccountID(self, userId, accountId, callback):
-        accounts.update({"username": userId}, {"$set": {"accountId": accountId}})
-
-        self.dbm[str(userId)] = str(accountId)  # semidbm only allows strings.
-        if getattr(self.dbm, 'sync', None):
-            self.dbm.sync()
+        account = accounts.find_one({"username": userId})
+        if account:
+            accounts.update({"username": userId}, {"$set": {"accountId": accountId}})
             callback(True)
         else:
             self.notify.warning('Unable to associate user %s with account %d!' % (userId, accountId))
             callback(False)
 
+# MySQL implementation of the AccountDB
+#
+# params:
+#        'mysql-username' =>  'toontown'
+#        'mysql-password' =>  'password'
+#        'mysql-db' =>  'toontown'
+#        'mysql-host' =>  '127.0.0.1'
+#        'mysql-port' =>  '3306'
+#        'mysql-ssl' =>  'False'
+#        'mysql-ssl-ca' =>  ''
+#        'mysql-ssl-cert' =>  ''
+#        'mysql-ssl-key' =>  ''
+#        'mysql-ssl-verify-cert' =>  'False'
+#        'mysql-auto-new-account' =>  'True'
+#
+# dependencies:
+#    apt-get install python-mysqldb
+#    pip install py-bcrypt
+
+class MySQLAccountDB(AccountDB):
+    notify = directNotify.newCategory('MySQLAccountDB')
+
+    def get_hashed_password(plain_text_password):
+        return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
+
+    def check_password(plain_text_password, hashed_password):
+        return bcrypt.checkpw(plain_text_password, hashed_password)
+
+    def create_database(self, cursor):
+      try:
+          cursor.execute(
+            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(self.db))
+      except mysql.connector.Error as err:
+          print("Failed creating database: {}".format(err))
+          exit(1)
+
+    def create_tables(self, cursor):
+        for name, ddl in self.TABLES.iteritems():
+            try:
+                cursor.execute(ddl)
+            except mysql.connector.Error as err:
+                if err.errno != errorcode.ER_TABLE_EXISTS_ERROR:
+                else:
+                    print(err.msg)
+                    exit(1)
+
+    def __init__(self, csm):
+        self.csm = csm
+
+        # Just a few configuration options
+        self.username = simbase.config.GetString('mysql-username', 'toontown')
+        self.password = simbase.config.GetString('mysql-password', 'password')
+        self.db = simbase.config.GetString('mysql-db', 'toontown')
+        self.host = simbase.config.GetString('mysql-host', '127.0.0.1')
+        self.port = simbase.config.GetString('mysql-port', '3306')
+        self.ssl = simbase.config.GetString('mysql-ssl', 'False')
+        self.ssl_ca = simbase.config.GetString('mysql-ssl-ca', '')
+        self.ssl_cert = simbase.config.GetString('mysql-ssl-cert', '')
+        self.ssl_key = simbase.config.GetString('mysql-ssl-key', '')
+        self.ssl_verify_cert = simbase.config.GetString('mysql-ssl-verify-cert', 'False')
+        self.auto_new_account = simbase.config.GetString('mysql-auto-new-account', 'True')
+
+        # Lets try connection to the db
+        if self.ssl:
+            self.config = {
+              'user': self.username,
+              'password': self.password,
+              'db': self.db,
+              'host': self.host,
+              'port': self.port,
+              'client_flags': [ClientFlag.SSL],
+              'ssl_ca': self.ssl_ca,
+              'ssl_cert': self.ssl_cert,
+              'ssl_key': self.ssl_key,
+              'ssl_verify_cert': self.ssl_verify_cert
+            }
+        else:
+            self.config = {
+              'user': self.username,
+              'password': self.password,
+              'db': self.db,
+              'host': self.host,
+              'port': self.port,
+            }
+
+        self.cnx = mysql.connector.connect(**self.config)
+        self.cur = self.cnx.cursor(buffered=True)
+
+        # First we try to change the the particular db using the
+        # database property.  If there is an error, we try to
+        # create the database and then switch to it.
+
+        try:
+            self.cnx.database = self.db
+        except mysql.connector.Error as err:
+            if err.errno == errorcode.ER_BAD_DB_ERROR:
+                create_database(self, self.cur)
+                self.cnx.database = self.db
+            else:
+                print(err)
+                exit(1)
+
+        # Now lets try to make the required tables
+        self.TABLES = {}
+        self.TABLES['Accounts'] = {
+            "CREATE TABLE `Accounts` ("
+            "  `username` varchar(20) not NULL,"
+            "  `password` varchar(32) not NULL,"
+            "  `rawPassword` bool,"
+            "  `accountId` int(20) not NULL,"
+            "  `accessLevel` int(20) not NULL,"
+            "  `status` varchar(20) not NULL,"
+            "  `date` varchar(20) not NULL,"
+            "  `email` varchar(20) not NULL"
+            ") ENGINE=InnoDB;")
+
+        self.count_account = ("SELECT COUNT(*) from Account")
+        self.select_account = ("SELECT password,accountId,accessLevel,status,date FROM Accounts where username = %s")
+        self.add_account = ("REPLACE INTO Accounts (username, password, accountId, accessLevel) VALUES (%s, %s, %s, %s)")
+        self.update_avid = ("UPDATE Accounts SET accountId = %s where username = %s")
+        self.count_avid = ("SELECT COUNT(*) from Account WHERE username = %s")
+
+        self.TABLES['NameApprovals'] = {
+            "CREATE TABLE `NameApprovals` ("
+            "  `avId` int(20) not NULL,"
+            "  `name` varchar(32) not NULL,"
+            "  `status` varchar(20) not NULL"
+            ") ENGINE=InnoDB;")
+
+        self.select_name = ("SELECT status FROM NameApprovals where avId = %s")
+        self.add_name_request = ("REPLACE INTO NameApprovals (avId, name, status) VALUES (%s, %s, %s)")
+        self.delete_name_query = ("DELETE FROM NameApprovals where avId = %s")
+
+        create_tables(self, self.cur)
+
+    def __del__(self):
+        try:
+            this.cur.close()
+        except:
+            pass
+
+        try:
+            this.cnx.close()
+        except:
+            pass
+
+
+    def addNameRequest(self, avId, name):
+       self.cur.execute(self.add_name_request, (avId, name, "PENDING"))
+       self.cnx.commit()
+       return 'Success'
+        
+    def getNameStatus(self, avId):
+        self.cur.execute(self.select_name, (avId))
+        for (status) in self.cur:
+            return status;
+        return "REJECTED"
+
+    def removeNameRequest(self, avId):
+        self.cur.execute(self.delete_name_query, (avId))
+        return 'Success'
+
+    def lookup(self, token, callback):
+        try:
+            tokenList = token.split(':')
+
+            if len(tokenList) != 2:
+                response = {
+                  'success': False,
+                  'reason': "invalid password format"
+                }
+                callback(response)
+                return response
+
+            username = tokenList[0]
+            password = tokenList[1]
+
+            self.cur.execute(self.count_account)
+            row = self.cur.fetchone()
+            if row[0] == "0":
+                self.cur.execute(self.add_account, ( username, get_hashed_password(password), 0, 700))
+                response = {
+                  'success': True,
+                  'userId': username,
+                  'accountId': 0,
+                  'accessLevel': 700
+                }
+                callback(response)
+                return response
+
+            self.cur.execute(self.select_account, (username))
+            row = self.cur.fetchone()
+
+            if row:
+                if !check_password(row[0], account["password"]):
+                    response = {
+                      'success': False,
+                      'reason': "invalid password"
+                    }
+                    callback(response)
+                    return response
+
+                response = {
+                    'success': True,
+                    'userId': username,
+                    'accountId': row[1]),
+                    'accessLevel': int(row[2])
+                }
+                callback(response)
+                return response
+
+            if self.auto_new_account:
+                self.cur.execute(self.add_account, (username,  get_hashed_password(password), 0, max(100, minAccessLevel)))
+                self.cnx.commit()
+
+                response = {
+                  'success': True,
+                  'userId': username,
+                  'accountId': 0,
+                  'accessLevel': max(100, minAccessLevel))
+                }
+
+                callback(response)
+                return response
+            else:
+                response = {
+                  'success': False,
+                  'reason': "unknown user"
+                }
+                callback(response)
+                return response
+
+        except:
+            self.notify.warning('Could not decode the provided token!')
+            response = {
+                'success': False,
+                'reason': "Can't decode this token."
+            }
+            callback(response)
+            return response
+
+    def storeAccountId(self, userId, accountId, callback):
+        row = self.cur.execute(self.count_avid, (userId))
+        if row[0] == "1":
+            self.cur.execute(self.update_avid, (accountId, userId))
+            self.cnx.commit()
+            callback(True)
+        else:
+            self.notify.warning('Unable to associate user %s with account %d!' % (userId, accountId))
+            callback(False)
 
 class RemoteAccountDB(AccountDB):
     notify = directNotify.newCategory('RemoteAccountDB')
@@ -1182,6 +1425,8 @@ class ClientServicesManagerUD(DistributedObjectGlobalUD):
             self.accountDB = LocalAccountDB(self)
         elif accountDBType == 'mongodb':
             self.accountDB = MongoAccountDB(self)
+        elif accountDBType == 'mysqldb':
+            self.accountDB = MySQLAccountDB(self)
         elif accountDBType == 'remote':
             self.accountDB = RemoteAccountDB(self)
         else:
