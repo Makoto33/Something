@@ -608,7 +608,7 @@ class MySQLAccountDB(AccountDB):
 
     def storeAccountId(self, userId, accountId, callback):
         row = self.cur.execute(self.count_avid, (userId,))
-        if row[0] == "1":
+        if row[0] == 1:
             self.cur.execute(self.update_avid, (accountId, userId))
             self.cnx.commit()
             callback(True)
