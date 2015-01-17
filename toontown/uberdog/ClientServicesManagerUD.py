@@ -314,13 +314,18 @@ class MongoAccountDB(AccountDB):
 #        'mysql-password' =>  'password'
 #        'mysql-db' =>  'toontown'
 #        'mysql-host' =>  '127.0.0.1'
-#        'mysql-port' =>  '3306'
-#        'mysql-ssl' =>  'False'
+#        'mysql-port' =>  3306
+#        'mysql-ssl' =>  False
 #        'mysql-ssl-ca' =>  ''
 #        'mysql-ssl-cert' =>  ''
 #        'mysql-ssl-key' =>  ''
-#        'mysql-ssl-verify-cert' =>  'False'
-#        'mysql-auto-new-account' =>  'True'
+#        'mysql-ssl-verify-cert' =>  False
+#        'mysql-auto-new-account' =>  True
+#        'mysql-migrate' =>  True
+#
+# if mysql-migrate is on, it allows for blank passwords until you try
+# to use one for the first time.  At that point, it sets the password
+# to the first non-blank password the player uses.
 #
 # dependencies:
 #    apt-get install python-mysqldb
@@ -333,6 +338,8 @@ class MySQLAccountDB(AccountDB):
         return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
 
     def check_password(plain_text_password, hashed_password):
+        if self.auto_migrate and plain_text_password == "" and hashed_password == "":
+            return
         return bcrypt.checkpw(plain_text_password, hashed_password)
 
     def create_database(self, cursor):
@@ -353,6 +360,22 @@ class MySQLAccountDB(AccountDB):
                     print(err.msg)
                     exit(1)
 
+    def auto_migrate_semidbm(self):
+        self.cur.execute(self.count_account)
+        row = self.cur.fetchone()
+        if row[0] != "0":
+            return
+
+        filename = simbase.config.GetString(
+            'account-bridge-filename', 'account-bridge')
+        dbm = semidbm.open(filename, 'c')
+
+        for account, accountid in dbm.iteritems():
+            print "%s maps to %s"%(account, accountid)
+            self.cur.execute(self.add_account, (username,  "", accountid, 0))
+        self.cnx.commit()
+        dbm.close()
+
     def __init__(self, csm):
         self.csm = csm
 
@@ -361,13 +384,14 @@ class MySQLAccountDB(AccountDB):
         self.password = simbase.config.GetString('mysql-password', 'password')
         self.db = simbase.config.GetString('mysql-db', 'toontown')
         self.host = simbase.config.GetString('mysql-host', '127.0.0.1')
-        self.port = simbase.config.GetString('mysql-port', '3306')
-        self.ssl = simbase.config.GetString('mysql-ssl', 'False')
+        self.port = simbase.config.GetInt('mysql-port', 3306)
+        self.ssl = simbase.config.GetBool('mysql-ssl', False)
         self.ssl_ca = simbase.config.GetString('mysql-ssl-ca', '')
         self.ssl_cert = simbase.config.GetString('mysql-ssl-cert', '')
         self.ssl_key = simbase.config.GetString('mysql-ssl-key', '')
-        self.ssl_verify_cert = simbase.config.GetString('mysql-ssl-verify-cert', 'False')
-        self.auto_new_account = simbase.config.GetString('mysql-auto-new-account', 'True')
+        self.ssl_verify_cert = simbase.config.GetBool('mysql-ssl-verify-cert', False)
+        self.auto_new_account = simbase.config.GetBool('mysql-auto-new-account', True)
+        self.auto_migrate = simbase.config.GetBool('mysql-auto-migrate', True)
 
         # Lets try connection to the db
         if self.ssl:
@@ -415,7 +439,7 @@ class MySQLAccountDB(AccountDB):
             "CREATE TABLE `Accounts` ("
             "  `username` varchar(20) not NULL,"
             "  `password` varchar(32) not NULL,"
-            "  `rawPassword` bool,"
+            "  `rawPassword` tinyint,"
             "  `accountId` int(20) not NULL,"
             "  `accessLevel` int(20) not NULL,"
             "  `status` varchar(20) not NULL,"
@@ -424,9 +448,10 @@ class MySQLAccountDB(AccountDB):
             ") ENGINE=InnoDB;")
 
         self.count_account = ("SELECT COUNT(*) from Account")
-        self.select_account = ("SELECT password,accountId,accessLevel,status,date FROM Accounts where username = %s")
+        self.select_account = ("SELECT password,accountId,accessLevel,status,date,rawPassword FROM Accounts where username = %s")
         self.add_account = ("REPLACE INTO Accounts (username, password, accountId, accessLevel) VALUES (%s, %s, %s, %s)")
         self.update_avid = ("UPDATE Accounts SET accountId = %s where username = %s")
+        self.update_password = ("UPDATE Accounts SET password = %s, rawPassword = '0' where username = %s")
         self.count_avid = ("SELECT COUNT(*) from Account WHERE username = %s")
 
         self.TABLES['NameApprovals'] = {
@@ -441,6 +466,9 @@ class MySQLAccountDB(AccountDB):
         self.delete_name_query = ("DELETE FROM NameApprovals where avId = %s")
 
         create_tables(self, self.cur)
+
+        if self.auto_migrate:
+            auto_migrate_semidbm(self)
 
     def __del__(self):
         try:
@@ -501,7 +529,16 @@ class MySQLAccountDB(AccountDB):
             row = self.cur.fetchone()
 
             if row:
-                if !check_password(row[0], account["password"]):
+                if (self.auto_migrate and (row[0] == "" and password != "")) or row[6] == "1":
+                    if row[6] == "1":
+                        row[0] = get_hashed_password(row[0])
+                    else:
+                        row[0] = get_hashed_password(password)
+                    self.cur.execute(self.update_password, (row[0], username))
+                    self.cnx.commit()
+                    pass
+
+                if !check_password(row[0], password):
                     response = {
                       'success': False,
                       'reason': "invalid password"
@@ -512,9 +549,11 @@ class MySQLAccountDB(AccountDB):
                 response = {
                     'success': True,
                     'userId': username,
-                    'accountId': row[1]),
-                    'accessLevel': int(row[2])
+                    'accountId': row[1])
                 }
+                if int(row[2]) != 0:
+                    response['accessLevel'] = int(row[2])
+
                 callback(response)
                 return response
 
