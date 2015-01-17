@@ -499,13 +499,13 @@ class MySQLAccountDB(AccountDB):
        return 'Success'
         
     def getNameStatus(self, avId):
-        self.cur.execute(self.select_name, (avId))
+        self.cur.execute(self.select_name, (avId,))
         for (status) in self.cur:
             return status;
         return "REJECTED"
 
     def removeNameRequest(self, avId):
-        self.cur.execute(self.delete_name_query, (avId))
+        self.cur.execute(self.delete_name_query, (avId,))
         return 'Success'
 
     def lookup(self, token, callback):
@@ -538,8 +538,6 @@ class MySQLAccountDB(AccountDB):
 
             self.cur.execute(self.select_account, (username,))
             row = self.cur.fetchone()
-
-            print row
 
             if row:
                 if (self.auto_migrate and (row[0] == "" and password != "")) or row[5] == 0:
@@ -609,7 +607,7 @@ class MySQLAccountDB(AccountDB):
 #             return response
 
     def storeAccountId(self, userId, accountId, callback):
-        row = self.cur.execute(self.count_avid, (userId))
+        row = self.cur.execute(self.count_avid, (userId,))
         if row[0] == "1":
             self.cur.execute(self.update_avid, (accountId, userId))
             self.cnx.commit()
