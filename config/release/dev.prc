@@ -7,7 +7,7 @@ model-path ../resources
 # Server:
 server-version infinite-dev
 min-access-level 600
-accountdb-type developer
+accountdb-type mysqldb
 shard-low-pop 50
 shard-mid-pop 100
 

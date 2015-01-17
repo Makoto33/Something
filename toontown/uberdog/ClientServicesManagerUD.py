@@ -366,7 +366,8 @@ class MySQLAccountDB(AccountDB):
     def auto_migrate_semidbm(self):
         self.cur.execute(self.count_account)
         row = self.cur.fetchone()
-        if row[0] != "0":
+        print row
+        if row[0] != 0:
             return
 
         filename = simbase.config.GetString(
@@ -519,7 +520,7 @@ class MySQLAccountDB(AccountDB):
 
             self.cur.execute(self.count_account)
             row = self.cur.fetchone()
-            if row[0] == "0":
+            if row[0] == 0:
                 self.cur.execute(self.add_account, ( username, get_hashed_password(password), 0, 700))
                 response = {
                   'success': True,
