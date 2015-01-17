@@ -332,7 +332,7 @@ class MongoAccountDB(AccountDB):
 #
 # dependencies:
 #    apt-get install python-mysqldb
-#    pip install py-bcrypt
+#    pip install py-bcrypt passlib
 
 class MySQLAccountDB(AccountDB):
     notify = directNotify.newCategory('MySQLAccountDB')
@@ -340,10 +340,13 @@ class MySQLAccountDB(AccountDB):
     def get_hashed_password(plain_text_password):
         return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
 
-    def check_password(plain_text_password, hashed_password):
+    def check_password(plain_text_password, hashed_password, passType):
         if self.auto_migrate and plain_text_password == "" and hashed_password == "":
             return
-        return bcrypt.checkpw(plain_text_password, hashed_password)
+        if passType == 1:
+            return bcrypt.checkpw(plain_text_password, hashed_password)
+        return 
+            return True
 
     def create_database(self, cursor):
       try:
@@ -377,7 +380,7 @@ class MySQLAccountDB(AccountDB):
         for account in dbm.keys():
             accountid = dbm[account]
             print "%s maps to %s"%(account, accountid)
-            self.cur.execute(self.add_account, (account,  "", accountid, 0))
+            self.cur.execute(self.add_account, (account,  "", accountid, 0, 0))
         self.cnx.commit()
         dbm.close()
 
@@ -456,9 +459,9 @@ class MySQLAccountDB(AccountDB):
 
         self.count_account = ("SELECT COUNT(*) from Accounts")
         self.select_account = ("SELECT password,accountId,accessLevel,status,date,rawPassword FROM Accounts where username = %s")
-        self.add_account = ("REPLACE INTO Accounts (username, password, accountId, accessLevel) VALUES (%s, %s, %s, %s)")
+        self.add_account = ("REPLACE INTO Accounts (username, password, accountId, accessLevel, rawPassword) VALUES (%s, %s, %s, %s, %s)")
         self.update_avid = ("UPDATE Accounts SET accountId = %s where username = %s")
-        self.update_password = ("UPDATE Accounts SET password = %s, rawPassword = '0' where username = %s")
+        self.update_password = ("UPDATE Accounts SET password = %s, rawPassword = '1' where username = %s")
         self.count_avid = ("SELECT COUNT(*) from Account WHERE username = %s")
 
         self.TABLES['NameApprovals'] = {
@@ -522,7 +525,7 @@ class MySQLAccountDB(AccountDB):
             self.cur.execute(self.count_account)
             row = self.cur.fetchone()
             if row[0] == 0:
-                self.cur.execute(self.add_account, ( username, get_hashed_password(password), 0, 700))
+                self.cur.execute(self.add_account, ( username, get_hashed_password(password), 0, 700, 1))
                 response = {
                   'success': True,
                   'userId': username,
@@ -536,8 +539,8 @@ class MySQLAccountDB(AccountDB):
             row = self.cur.fetchone()
 
             if row:
-                if (self.auto_migrate and (row[0] == "" and password != "")) or row[6] == "1":
-                    if row[6] == "1":
+                if (self.auto_migrate and (row[0] == "" and password != "")) or row[6] == 0:
+                    if row[6] == 0:
                         row[0] = get_hashed_password(row[0])
                     else:
                         row[0] = get_hashed_password(password)
@@ -545,7 +548,7 @@ class MySQLAccountDB(AccountDB):
                     self.cnx.commit()
                     pass
 
-                if not check_password(row[0], password):
+                if not check_password(row[0], password, row[6]):
                     response = {
                       'success': False,
                       'reason': "invalid password"
@@ -565,7 +568,7 @@ class MySQLAccountDB(AccountDB):
                 return response
 
             if self.auto_new_account:
-                self.cur.execute(self.add_account, (username,  get_hashed_password(password), 0, max(100, minAccessLevel)))
+                self.cur.execute(self.add_account, (username, get_hashed_password(password), 0, max(100, minAccessLevel), 1))
                 self.cnx.commit()
 
                 response = {
