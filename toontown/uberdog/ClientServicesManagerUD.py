@@ -463,7 +463,7 @@ class MySQLAccountDB(AccountDB):
         self.add_account = ("REPLACE INTO Accounts (username, password, accountId, accessLevel, rawPassword) VALUES (%s, %s, %s, %s, %s)")
         self.update_avid = ("UPDATE Accounts SET accountId = %s where username = %s")
         self.update_password = ("UPDATE Accounts SET password = %s, rawPassword = '1' where username = %s")
-        self.count_avid = ("SELECT COUNT(*) from Account WHERE username = %s")
+        self.count_avid = ("SELECT COUNT(*) from Accounts WHERE username = %s")
 
         self.TABLES['NameApprovals'] = {
             "CREATE TABLE `NameApprovals` ("
@@ -500,8 +500,9 @@ class MySQLAccountDB(AccountDB):
         
     def getNameStatus(self, avId):
         self.cur.execute(self.select_name, (avId,))
-        for (status) in self.cur:
-            return status;
+        row = self.cur.fetchone()
+        if row:
+            return row[0]
         return "REJECTED"
 
     def removeNameRequest(self, avId):
@@ -607,7 +608,9 @@ class MySQLAccountDB(AccountDB):
 #             return response
 
     def storeAccountID(self, userId, accountId, callback):
-        row = self.cur.execute(self.count_avid, (userId,))
+        self.cur.execute(self.count_avid, (userId,))
+        row = self.cur.fetchone()
+    
         if row[0] == 1:
             self.cur.execute(self.update_avid, (accountId, userId))
             self.cnx.commit()
