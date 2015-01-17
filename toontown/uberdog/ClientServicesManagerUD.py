@@ -347,7 +347,7 @@ class MySQLAccountDB(AccountDB):
             return
         if passType == 1:
             return bcrypt.checkpw(plain_text_password, hashed_password)
-        return 
+        else: 
             return True
 
     def create_database(self, cursor):
@@ -606,7 +606,7 @@ class MySQLAccountDB(AccountDB):
 #             callback(response)
 #             return response
 
-    def storeAccountId(self, userId, accountId, callback):
+    def storeAccountID(self, userId, accountId, callback):
         row = self.cur.execute(self.count_avid, (userId,))
         if row[0] == 1:
             self.cur.execute(self.update_avid, (accountId, userId))
