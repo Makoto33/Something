@@ -26,9 +26,11 @@ if accountDBType == 'remote':
 
 if accountDBType == 'mongodb':
     import pymongo
+    import bcrypt
     from pymongo import MongoClient
 
 if accountDBType == 'mysqldb':
+    import bcrypt
     import mysql.connector
 
 # Sometimes we'll want to force a specific access level, such as on the
@@ -199,10 +201,10 @@ class LocalAccountDB(AccountDB):
 class MongoAccountDB(AccountDB):
     notify = directNotify.newCategory('MongoAccountDB')
 
-    def get_hashed_password(plain_text_password):
+    def get_hashed_password(self, plain_text_password):
         return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
  
-    def check_password(plain_text_password, hashed_password):
+    def check_password(self, plain_text_password, hashed_password):
         return bcrypt.checkpw(plain_text_password, hashed_password)
 
     def __init__(self, csm):
@@ -248,7 +250,7 @@ class MongoAccountDB(AccountDB):
 
             # special case for first user
             if accounts.count() == 0:
-                account = { "username": username, "password": get_hashed_password(password), "accountId": 0, "accessLevel": 700}
+                account = { "username": username, "password": self.get_hashed_password(password), "accountId": 0, "accessLevel": 700}
                 accounts.insert(account)
                 response = {
                   'success': True,
@@ -262,7 +264,7 @@ class MongoAccountDB(AccountDB):
             account = accounts.find_one({"username": username})
 
             if account:
-                if not check_password(password, account["password"]):
+                if not self.check_password(password, account["password"]):
                     response = {
                       'success': False,
                       'reason': "invalid password"
@@ -279,7 +281,7 @@ class MongoAccountDB(AccountDB):
                 callback(response)
                 return response
 
-            account = { "username": username, "password": get_hashed_password(password), "accountId": 0, "accessLevel": max(100, minAccessLevel)}
+            account = { "username": username, "password": self.get_hashed_password(password), "accountId": 0, "accessLevel": max(100, minAccessLevel)}
             accounts.insert(account)
 
             response = {
@@ -337,10 +339,10 @@ class MongoAccountDB(AccountDB):
 class MySQLAccountDB(AccountDB):
     notify = directNotify.newCategory('MySQLAccountDB')
 
-    def get_hashed_password(plain_text_password):
+    def get_hashed_password(self, plain_text_password):
         return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
 
-    def check_password(plain_text_password, hashed_password, passType):
+    def check_password(self, plain_text_password, hashed_password, passType):
         if self.auto_migrate and plain_text_password == "" and hashed_password == "":
             return
         if passType == 1:
@@ -369,7 +371,6 @@ class MySQLAccountDB(AccountDB):
     def auto_migrate_semidbm(self):
         self.cur.execute(self.count_account)
         row = self.cur.fetchone()
-        print row
         if row[0] != 0:
             return
 
@@ -525,7 +526,7 @@ class MySQLAccountDB(AccountDB):
             self.cur.execute(self.count_account)
             row = self.cur.fetchone()
             if row[0] == 0:
-                self.cur.execute(self.add_account, ( username, get_hashed_password(password), 0, 700, 1))
+                self.cur.execute(self.add_account, ( username, self.get_hashed_password(password), 0, 700))
                 response = {
                   'success': True,
                   'userId': username,
@@ -535,20 +536,22 @@ class MySQLAccountDB(AccountDB):
                 callback(response)
                 return response
 
-            self.cur.execute(self.select_account, (username))
+            self.cur.execute(self.select_account, (username,))
             row = self.cur.fetchone()
 
+            print row
+
             if row:
-                if (self.auto_migrate and (row[0] == "" and password != "")) or row[6] == 0:
-                    if row[6] == 0:
-                        row[0] = get_hashed_password(row[0])
+                if (self.auto_migrate and (row[0] == "" and password != "")) or row[5] == 0:
+                    if row[5] == 0:
+                        row[0] = self.get_hashed_password(row[0])
                     else:
-                        row[0] = get_hashed_password(password)
+                        row[0] = self.get_hashed_password(password)
                     self.cur.execute(self.update_password, (row[0], username))
                     self.cnx.commit()
                     pass
 
-                if not check_password(row[0], password, row[6]):
+                if not self.check_password(row[0], password, row[5]):
                     response = {
                       'success': False,
                       'reason': "invalid password"
@@ -568,7 +571,7 @@ class MySQLAccountDB(AccountDB):
                 return response
 
             if self.auto_new_account:
-                self.cur.execute(self.add_account, (username, get_hashed_password(password), 0, max(100, minAccessLevel), 1))
+                self.cur.execute(self.add_account, (username, self.get_hashed_password(password), 0, max(100, minAccessLevel), 1))
                 self.cnx.commit()
 
                 response = {
@@ -588,14 +591,22 @@ class MySQLAccountDB(AccountDB):
                 callback(response)
                 return response
 
-        except:
-            self.notify.warning('Could not decode the provided token!')
+        except mysql.connector.Error as err:
+            print("mysql exception {}".format(err))
             response = {
                 'success': False,
                 'reason': "Can't decode this token."
             }
             callback(response)
             return response
+#         except:
+#             self.notify.warning('Could not decode the provided token!')
+#             response = {
+#                 'success': False,
+#                 'reason': "Can't decode this token."
+#             }
+#             callback(response)
+#             return response
 
     def storeAccountId(self, userId, accountId, callback):
         row = self.cur.execute(self.count_avid, (userId))
