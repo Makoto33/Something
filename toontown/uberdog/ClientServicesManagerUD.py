@@ -259,7 +259,7 @@ class MongoAccountDB(AccountDB):
             account = accounts.find_one({"username": username})
 
             if account:
-                if !check_password(password, account["password"]):
+                if not check_password(password, account["password"]):
                     response = {
                       'success': False,
                       'reason': "invalid password"
@@ -356,7 +356,6 @@ class MySQLAccountDB(AccountDB):
                 cursor.execute(ddl)
             except mysql.connector.Error as err:
                 if err.errno != errorcode.ER_TABLE_EXISTS_ERROR:
-                else:
                     print(err.msg)
                     exit(1)
 
@@ -445,7 +444,7 @@ class MySQLAccountDB(AccountDB):
             "  `status` varchar(20) not NULL,"
             "  `date` varchar(20) not NULL,"
             "  `email` varchar(20) not NULL"
-            ") ENGINE=InnoDB;")
+            ") ENGINE=InnoDB;"}
 
         self.count_account = ("SELECT COUNT(*) from Account")
         self.select_account = ("SELECT password,accountId,accessLevel,status,date,rawPassword FROM Accounts where username = %s")
@@ -459,7 +458,7 @@ class MySQLAccountDB(AccountDB):
             "  `avId` int(20) not NULL,"
             "  `name` varchar(32) not NULL,"
             "  `status` varchar(20) not NULL"
-            ") ENGINE=InnoDB;")
+            ") ENGINE=InnoDB;"}
 
         self.select_name = ("SELECT status FROM NameApprovals where avId = %s")
         self.add_name_request = ("REPLACE INTO NameApprovals (avId, name, status) VALUES (%s, %s, %s)")
@@ -538,7 +537,7 @@ class MySQLAccountDB(AccountDB):
                     self.cnx.commit()
                     pass
 
-                if !check_password(row[0], password):
+                if not check_password(row[0], password):
                     response = {
                       'success': False,
                       'reason': "invalid password"
@@ -549,7 +548,7 @@ class MySQLAccountDB(AccountDB):
                 response = {
                     'success': True,
                     'userId': username,
-                    'accountId': row[1])
+                    'accountId': row[1]
                 }
                 if int(row[2]) != 0:
                     response['accessLevel'] = int(row[2])
@@ -565,7 +564,7 @@ class MySQLAccountDB(AccountDB):
                   'success': True,
                   'userId': username,
                   'accountId': 0,
-                  'accessLevel': max(100, minAccessLevel))
+                  'accessLevel': max(100, minAccessLevel)
                 }
 
                 callback(response)
