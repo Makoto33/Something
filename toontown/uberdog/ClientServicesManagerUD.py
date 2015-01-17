@@ -28,6 +28,9 @@ if accountDBType == 'mongodb':
     import pymongo
     from pymongo import MongoClient
 
+if accountDBType == 'mysqldb':
+    import mysql.connector
+
 # Sometimes we'll want to force a specific access level, such as on the
 # developer server:
 minAccessLevel = simbase.config.GetInt('min-access-level', 100)
@@ -355,7 +358,8 @@ class MySQLAccountDB(AccountDB):
             try:
                 cursor.execute(ddl)
             except mysql.connector.Error as err:
-                if err.errno != errorcode.ER_TABLE_EXISTS_ERROR:
+                if err.errno != mysql.connector.errorcode.ER_TABLE_EXISTS_ERROR:
+                    print(ddl)
                     print(err.msg)
                     exit(1)
 
@@ -425,8 +429,8 @@ class MySQLAccountDB(AccountDB):
         try:
             self.cnx.database = self.db
         except mysql.connector.Error as err:
-            if err.errno == errorcode.ER_BAD_DB_ERROR:
-                create_database(self, self.cur)
+            if err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
+                self.create_database(self.cur)
                 self.cnx.database = self.db
             else:
                 print(err)
@@ -436,17 +440,19 @@ class MySQLAccountDB(AccountDB):
         self.TABLES = {}
         self.TABLES['Accounts'] = {
             "CREATE TABLE `Accounts` ("
-            "  `username` varchar(20) not NULL,"
-            "  `password` varchar(32) not NULL,"
-            "  `rawPassword` tinyint,"
-            "  `accountId` int(20) not NULL,"
-            "  `accessLevel` int(20) not NULL,"
-            "  `status` varchar(20) not NULL,"
-            "  `date` varchar(20) not NULL,"
-            "  `email` varchar(20) not NULL"
+            "  `id` int(10) NOT NULL AUTO_INCREMENT,"
+            "  `username` varchar(20) NOT NULL,"
+            "  `password` varchar(32) NOT NULL,"
+            "  `rawPassword` tinyint(4) NOT NULL,"
+            "  `accountId` int(20) NOT NULL,"
+            "  `accessLevel` int(20) NOT NULL,"
+            "  `status` varchar(20) NOT NULL,"
+            "  `date` varchar(20) NOT NULL,"
+            "  `email` varchar(20) NOT NULL,"
+            "  PRIMARY KEY (`id`)"
             ") ENGINE=InnoDB;"}
 
-        self.count_account = ("SELECT COUNT(*) from Account")
+        self.count_account = ("SELECT COUNT(*) from Accounts")
         self.select_account = ("SELECT password,accountId,accessLevel,status,date,rawPassword FROM Accounts where username = %s")
         self.add_account = ("REPLACE INTO Accounts (username, password, accountId, accessLevel) VALUES (%s, %s, %s, %s)")
         self.update_avid = ("UPDATE Accounts SET accountId = %s where username = %s")
@@ -464,10 +470,10 @@ class MySQLAccountDB(AccountDB):
         self.add_name_request = ("REPLACE INTO NameApprovals (avId, name, status) VALUES (%s, %s, %s)")
         self.delete_name_query = ("DELETE FROM NameApprovals where avId = %s")
 
-        create_tables(self, self.cur)
+#        self.create_tables(self.cur)
 
         if self.auto_migrate:
-            auto_migrate_semidbm(self)
+            self.auto_migrate_semidbm()
 
     def __del__(self):
         try:
