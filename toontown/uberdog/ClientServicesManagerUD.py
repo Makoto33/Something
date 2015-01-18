@@ -30,7 +30,7 @@ if accountDBType == 'mongodb':
     from pymongo import MongoClient
 
 if accountDBType == 'mysqldb':
-    import bcrypt
+    from passlib.hash import bcrypt
     import mysql.connector
 
 # Sometimes we'll want to force a specific access level, such as on the
@@ -202,10 +202,10 @@ class MongoAccountDB(AccountDB):
     notify = directNotify.newCategory('MongoAccountDB')
 
     def get_hashed_password(self, plain_text_password):
-        return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
+        return bcrypt.encrypt(plain_text_password)
  
     def check_password(self, plain_text_password, hashed_password):
-        return bcrypt.checkpw(plain_text_password, hashed_password)
+        return bcrypt.verify(plain_text_password, hashed_password)
 
     def __init__(self, csm):
         self.csm = csm
@@ -334,21 +334,18 @@ class MongoAccountDB(AccountDB):
 #
 # dependencies:
 #    apt-get install python-mysqldb
-#    pip install py-bcrypt passlib
+#    pip install passlib
 
 class MySQLAccountDB(AccountDB):
     notify = directNotify.newCategory('MySQLAccountDB')
 
     def get_hashed_password(self, plain_text_password):
-        return bcrypt.hashpw(plain_text_password, bcrypt.gensalt())
+        return bcrypt.encrypt(plain_text_password)
 
     def check_password(self, plain_text_password, hashed_password, passType):
         if self.auto_migrate and plain_text_password == "" and hashed_password == "":
             return
-        if passType == 1:
-            return bcrypt.checkpw(plain_text_password, hashed_password)
-        else: 
-            return True
+        return bcrypt.verify(plain_text_password, hashed_password)
 
     def create_database(self, cursor):
       try:
@@ -527,7 +524,7 @@ class MySQLAccountDB(AccountDB):
             self.cur.execute(self.count_account)
             row = self.cur.fetchone()
             if row[0] == 0:
-                self.cur.execute(self.add_account, ( username, self.get_hashed_password(password), 0, 700))
+                self.cur.execute(self.add_account, ( username, self.get_hashed_password(password), 0, 700, 2))
                 response = {
                   'success': True,
                   'userId': username,
@@ -570,7 +567,7 @@ class MySQLAccountDB(AccountDB):
                 return response
 
             if self.auto_new_account:
-                self.cur.execute(self.add_account, (username, self.get_hashed_password(password), 0, max(100, minAccessLevel), 1))
+                self.cur.execute(self.add_account, (username, self.get_hashed_password(password), 0, max(100, minAccessLevel), 2))
                 self.cnx.commit()
 
                 response = {
