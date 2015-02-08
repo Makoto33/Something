@@ -233,6 +233,10 @@ class DistributedFurnitureManagerAI(DistributedObjectAI):
         return self.deletedItems.getBlob()
 
     def suggestDirector(self, directorId):
+        if not self.air:
+            self.air.writeServerEvent('suspicious', 0, issue='No air object?')
+            return
+
         senderId = self.air.getAvatarIdFromSender()
 
         if self.ownerId != senderId:
